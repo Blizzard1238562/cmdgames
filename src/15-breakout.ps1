@@ -107,6 +107,7 @@ function Start-Breakout {
                 }
                 Set-Text -X ($bx + $padX) -Y ($by + $bh - 1) -Text (([string]$script:ChFull * $paddleW)) -Fg 'cyan'
                 Set-Cell -X ($bx + $ibx) -Y ($by + $iby) -Char $script:ChDiam -Fg 'white'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move the paddle - ball angle depends on hit spot - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 40
             }

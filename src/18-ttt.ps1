@@ -73,7 +73,7 @@ function Start-Ttt {
                     Wait-Frame 16
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol $msgCol
                     $k = Wait-RealKey
-                    if ($script:Headless) { $k = @('RightArrow', 'Enter', 'RightArrow', 'Enter')[$script:TestFrames % 4] }
+                    if ($script:Headless) { $k = [string](1 + ($script:TestFrames % 9)) }   # cycle digits 1-9: always reaches every cell, game always terminates
                     if ($k -eq 'Q' -or $k -eq 'Escape') { return }
                     $moved = $false
                     switch ($k) {
@@ -118,12 +118,14 @@ function Start-Ttt {
                 if ($result -eq 'X') {
                     $score += 100
                     $round++
+                    if ($script:Headless) { $sessionOver = $true }   # keep the smoke test finite
                     $msg = 'you win! next round...'
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol 'green'
                     Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 80
                     Arcade-Sleep -Ms 900
                 } elseif ($result -eq 'D') {
                     $score += 30
+                    if ($script:Headless) { $sessionOver = $true }   # keep the smoke test finite
                     $msg = 'draw! replaying...'
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol 'yellow'
                     Arcade-Sleep -Ms 900

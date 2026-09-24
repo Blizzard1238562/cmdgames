@@ -90,6 +90,7 @@ function Start-Dodge {
                 $pcol = 'green'; $pch = $script:ChDiam
                 if ($invul -gt 0) { $pcol = 'cyan' }
                 Set-Cell -X ($bx + $px) -Y ($by + $py) -Char $pch -Fg $pcol
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move - SPACE = quick dash (short cooldown) - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }

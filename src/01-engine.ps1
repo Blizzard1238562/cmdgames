@@ -272,9 +272,12 @@ function Show-Frame {
     $pf = -1; $pb = -1
     for ($y = 0; $y -lt $script:FbH; $y++) {
         $rowStart = $y * $script:FbW
-        # skip trailing spaces: less to render, cleaner look
+        # skip trailing spaces BUT erase to end-of-line afterwards with the
+        # row's true background, otherwise leftover pixels from longer frames
+        # of previous screens ghost through
         $last = $script:FbW - 1
         while ($last -ge 0 -and $script:FbCh[$rowStart + $last] -eq ' ') { $last-- }
+        $rowBg = $script:FbBg[$rowStart + $script:FbW - 1]
         for ($x = 0; $x -le $last; $x++) {
             $i = $rowStart + $x
             $c = $script:FbCh[$i]
@@ -283,6 +286,7 @@ function Show-Frame {
             if ($b -ne $pb) { [void]$sb.Append($script:ESC).Append('[48;5;').Append($b).Append('m'); $pb = $b }
             [void]$sb.Append($c)
         }
+        [void]$sb.Append($script:ESC).Append('[48;5;').Append($rowBg).Append('m').Append($script:ESC).Append('[K')
         if ($y -lt ($script:FbH - 1)) {
             [void]$sb.Append($script:ESC).Append('[0m').Append("`r`n")
             $pf = -1; $pb = -1

@@ -98,8 +98,8 @@ function Show-Menu {
     $sel = 0
     while ($true) {
         Clear-Frame
-        Show-MenuLogo -Y 4
-        Set-TextCentered -Y 9 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'
+        Show-MenuLogo -Y 3
+        Set-TextCentered -Y 10 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'
         $y0 = 11
         for ($i = 0; $i -lt $script:Games.Count; $i++) {
             $y = $y0 + $i

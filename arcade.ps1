@@ -367,9 +367,12 @@ function Show-Frame {
     $pf = -1; $pb = -1
     for ($y = 0; $y -lt $script:FbH; $y++) {
         $rowStart = $y * $script:FbW
-        # skip trailing spaces: less to render, cleaner look
+        # skip trailing spaces BUT erase to end-of-line afterwards with the
+        # row's true background, otherwise leftover pixels from longer frames
+        # of previous screens ghost through
         $last = $script:FbW - 1
         while ($last -ge 0 -and $script:FbCh[$rowStart + $last] -eq ' ') { $last-- }
+        $rowBg = $script:FbBg[$rowStart + $script:FbW - 1]
         for ($x = 0; $x -le $last; $x++) {
             $i = $rowStart + $x
             $c = $script:FbCh[$i]
@@ -378,6 +381,7 @@ function Show-Frame {
             if ($b -ne $pb) { [void]$sb.Append($script:ESC).Append('[48;5;').Append($b).Append('m'); $pb = $b }
             [void]$sb.Append($c)
         }
+        [void]$sb.Append($script:ESC).Append('[48;5;').Append($rowBg).Append('m').Append($script:ESC).Append('[K')
         if ($y -lt ($script:FbH - 1)) {
             [void]$sb.Append($script:ESC).Append('[0m').Append("`r`n")
             $pf = -1; $pb = -1
@@ -714,7 +718,8 @@ function Start-Snake {
         $grid = @{ }
         $snake = New-Object System.Collections.Generic.List[object]
         $sx = $bx + 12; $sy = $by + [int]($bh / 2)
-        for ($i = 4; $i -ge 0; $i--) { $snake.Add(@{ x = $sx - $i; y = $sy }) }
+        # head FIRST (index 0 = front in movement direction), body trailing left
+        for ($i = 0; $i -le 4; $i++) { $snake.Add(@{ x = $sx - $i; y = $sy }) }
         foreach ($s in $snake) { $grid["$($s.x),$($s.y)"] = $true }
         $dir = @{ x = 1; y = 0 }
         $pending = $null
@@ -782,6 +787,7 @@ function Start-Snake {
                 Clear-Frame
                 Draw-Box -X ($bx - 1) -Y ($by - 1) -W ($bw + 2) -H ($bh + 2) -Fg 'wall'
                 Set-GameHeader -Title $script:SnakeTitle -Score $score -Right ('len ' + $snake.Count)
+                Set-TextCentered -Y 28 -Text 'arrows/wasd steer - q menu' -Fg 'dim'
                 if ($food -ne $null) { Set-Cell -X $food[0] -Y $food[1] -Char $script:ChDiam -Fg 'red' }
                 for ($i = $snake.Count - 1; $i -ge 0; $i--) {
                     $seg = $snake[$i]
@@ -820,12 +826,15 @@ function Get-TetrisRotated {
     $out = @()
     foreach ($p in $base) {
         $x = $p[0]; $y = $p[1]
-        switch ($Rot % 4) {
-            0 { $out += ,@($x, $y) }
-            1 { $out += ,@(3 - $y, $x) }
-            2 { $out += ,@(3 - $x, 3 - $y) }
-            3 { $out += ,@($y, 3 - $x) }
-        }
+    # NOTE: the subtractions MUST be parenthesized. In PowerShell an array
+    # literal @(a - b, c) parses as a - (b, c), i.e. number minus array,
+    # which throws op_Subtraction at runtime.
+    switch ($Rot % 4) {
+        0 { $out += ,@($x, $y) }
+        1 { $out += ,@((3 - $y), $x) }
+        2 { $out += ,@((3 - $x), (3 - $y)) }
+        3 { $out += ,@($y, (3 - $x)) }
+    }
     }
     return ,$out
 }
@@ -1271,6 +1280,7 @@ function Start-Invaders {
                 foreach ($b in $bullets) { Set-Cell -X ($bx + $b.x) -Y ($by + $b.y) -Char '|' -Fg 'yellow' }
                 foreach ($bo in $bombs) { Set-Cell -X ($bx + $bo.x) -Y ($by + $bo.y) -Char '!' -Fg 'red' }
                 Set-Text -X ($bx + $shipX - 1) -Y ($by + $bh - 1) -Text ('/' + $script:ChFull + '\') -Fg 'white'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move - SPACE shoots - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }
@@ -1296,15 +1306,17 @@ function Start-Flappy {
         $bx = 10; $by = 6
         $birdY = [double]([int]($bh / 2))
         $vel = 0.0
-        $pipes = @()      # @{x, gap}
+        # List[object] (NOT @() +=): PS arrays are fixed-size, RemoveAt would throw
+        $pipes = New-Object System.Collections.Generic.List[object]      # @{x, gap}
         $score = 0
         $frame = 0
         $gravity = 0.35
         $flapV = -1.6
         $speed = 0.7
         $gap = 7
+        $started = $false
 
-        for ($i = 0; $i -lt 3; $i++) { $pipes += @{ x = ($bw + 10 + $i * 24); gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) } }
+        for ($i = 0; $i -lt 3; $i++) { $pipes.Add(@{ x = ($bw + 10 + $i * 24); gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) }) }
 
         try {
             $running = $true
@@ -1313,6 +1325,33 @@ function Start-Flappy {
                 $keys = Get-KeysPressed
                 if (Mute-ToggleRequested $keys) { }
                 if ($keys -contains 'Q') { return }
+
+                # pre-start hover: bird floats until the first flap
+                if (-not $started) {
+                    if ($keys -contains 'Space' -or $keys -contains 'UpArrow' -or $keys -contains 'W') {
+                        $started = $true
+                        $vel = $flapV
+                        Play-Sfx -Freq 500 -Ms 20
+                    }
+                    Clear-Frame
+                    Set-GameHeader -Title $script:FlappyTitle -Score $score
+                    Draw-Box -X ($bx - 1) -Y ($by - 1) -W ($bw + 2) -H ($bh + 2) -Fg 'wall'
+                    foreach ($p in $pipes) {
+                        $px = [int][Math]::Floor($p.x)
+                        for ($y = 0; $y -lt $bh; $y++) {
+                            if ($y -lt $p.gap -or $y -gt ($p.gap + $gap)) {
+                                Set-Cell -X ($bx + $px) -Y ($by + $y) -Char $script:ChFull -Fg 'green'
+                                if ($px + 1 -lt $bw) { Set-Cell -X ($bx + $px + 1) -Y ($by + $y) -Char $script:ChFull -Fg 'green' }
+                            }
+                        }
+                    }
+                    Set-Cell -X ($bx + 4) -Y ($by + [int]$birdY) -Char $script:ChStar -Fg 'yellow'
+                    Set-TextCentered -Y ($by + $bh + 2) -Text 'press SPACE to flap - the bird falls, so keep tapping!' -Fg 'dim'
+                    Show-Frame
+                    Wait-Frame 50
+                    continue
+                }
+
                 if ($keys -contains 'Space' -or $keys -contains 'UpArrow' -or $keys -contains 'W') {
                     $vel = $flapV
                     Play-Sfx -Freq 500 -Ms 20
@@ -1325,7 +1364,7 @@ function Start-Flappy {
                 if ($pipes[0].x -lt -3) {
                     $pipes.RemoveAt(0)
                     $lastX = $pipes[$pipes.Count - 1].x
-                    $pipes += @{ x = $lastX + 24; gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) }
+                    $pipes.Add(@{ x = $lastX + 24; gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) })
                 }
 
                 # scoring
@@ -1475,6 +1514,7 @@ function Start-Breakout {
                 }
                 Set-Text -X ($bx + $padX) -Y ($by + $bh - 1) -Text (([string]$script:ChFull * $paddleW)) -Fg 'cyan'
                 Set-Cell -X ($bx + $ibx) -Y ($by + $iby) -Char $script:ChDiam -Fg 'white'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move the paddle - ball angle depends on hit spot - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 40
             }
@@ -1620,6 +1660,7 @@ function Start-Frogger {
                 }
                 $fxi = [int][Math]::Round($script:FrogX)
                 Set-Cell -X ($bx + $fxi) -Y ($by + $script:FrogY) -Char $script:ChDiam -Fg 'green'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows hop - ride logs, dodge cars - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }
@@ -1723,6 +1764,7 @@ function Start-Dodge {
                 $pcol = 'green'; $pch = $script:ChDiam
                 if ($invul -gt 0) { $pcol = 'cyan' }
                 Set-Cell -X ($bx + $px) -Y ($by + $py) -Char $pch -Fg $pcol
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move - SPACE = quick dash (short cooldown) - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }
@@ -1809,7 +1851,7 @@ function Start-Ttt {
                     Wait-Frame 16
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol $msgCol
                     $k = Wait-RealKey
-                    if ($script:Headless) { $k = @('RightArrow', 'Enter', 'RightArrow', 'Enter')[$script:TestFrames % 4] }
+                    if ($script:Headless) { $k = [string](1 + ($script:TestFrames % 9)) }   # cycle digits 1-9: always reaches every cell, game always terminates
                     if ($k -eq 'Q' -or $k -eq 'Escape') { return }
                     $moved = $false
                     switch ($k) {
@@ -1854,12 +1896,14 @@ function Start-Ttt {
                 if ($result -eq 'X') {
                     $score += 100
                     $round++
+                    if ($script:Headless) { $sessionOver = $true }   # keep the smoke test finite
                     $msg = 'you win! next round...'
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol 'green'
                     Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 80
                     Arcade-Sleep -Ms 900
                 } elseif ($result -eq 'D') {
                     $score += 30
+                    if ($script:Headless) { $sessionOver = $true }   # keep the smoke test finite
                     $msg = 'draw! replaying...'
                     script:Draw-TttBoard -b $b -cur $cur -Msg $msg -MsgCol 'yellow'
                     Arcade-Sleep -Ms 900
@@ -2099,8 +2143,8 @@ function Show-Menu {
     $sel = 0
     while ($true) {
         Clear-Frame
-        Show-MenuLogo -Y 4
-        Set-TextCentered -Y 9 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'
+        Show-MenuLogo -Y 3
+        Set-TextCentered -Y 10 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'
         $y0 = 11
         for ($i = 0; $i -lt $script:Games.Count; $i++) {
             $y = $y0 + $i
@@ -2205,9 +2249,10 @@ if ($SelfTest) {
             $failed += $g.name
         }
     }
-    # menu draw test
+    # menu draw test (Start-Screen first, like the real flow does)
     try {
         $script:TestFrames = 0
+        Start-Screen -H 30
         Show-Menu
         Write-Host '  ok   menu'
     } catch [ArcadeSelfTestDone] {

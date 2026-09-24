@@ -132,6 +132,7 @@ function Start-Frogger {
                 }
                 $fxi = [int][Math]::Round($script:FrogX)
                 Set-Cell -X ($bx + $fxi) -Y ($by + $script:FrogY) -Char $script:ChDiam -Fg 'green'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows hop - ride logs, dodge cars - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }

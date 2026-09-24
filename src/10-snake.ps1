@@ -13,7 +13,8 @@ function Start-Snake {
         $grid = @{ }
         $snake = New-Object System.Collections.Generic.List[object]
         $sx = $bx + 12; $sy = $by + [int]($bh / 2)
-        for ($i = 4; $i -ge 0; $i--) { $snake.Add(@{ x = $sx - $i; y = $sy }) }
+        # head FIRST (index 0 = front in movement direction), body trailing left
+        for ($i = 0; $i -le 4; $i++) { $snake.Add(@{ x = $sx - $i; y = $sy }) }
         foreach ($s in $snake) { $grid["$($s.x),$($s.y)"] = $true }
         $dir = @{ x = 1; y = 0 }
         $pending = $null
@@ -81,6 +82,7 @@ function Start-Snake {
                 Clear-Frame
                 Draw-Box -X ($bx - 1) -Y ($by - 1) -W ($bw + 2) -H ($bh + 2) -Fg 'wall'
                 Set-GameHeader -Title $script:SnakeTitle -Score $score -Right ('len ' + $snake.Count)
+                Set-TextCentered -Y 28 -Text 'arrows/wasd steer - q menu' -Fg 'dim'
                 if ($food -ne $null) { Set-Cell -X $food[0] -Y $food[1] -Char $script:ChDiam -Fg 'red' }
                 for ($i = $snake.Count - 1; $i -ge 0; $i--) {
                     $seg = $snake[$i]

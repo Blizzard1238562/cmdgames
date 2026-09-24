@@ -18,12 +18,15 @@ function Get-TetrisRotated {
     $out = @()
     foreach ($p in $base) {
         $x = $p[0]; $y = $p[1]
-        switch ($Rot % 4) {
-            0 { $out += ,@($x, $y) }
-            1 { $out += ,@(3 - $y, $x) }
-            2 { $out += ,@(3 - $x, 3 - $y) }
-            3 { $out += ,@($y, 3 - $x) }
-        }
+    # NOTE: the subtractions MUST be parenthesized. In PowerShell an array
+    # literal @(a - b, c) parses as a - (b, c), i.e. number minus array,
+    # which throws op_Subtraction at runtime.
+    switch ($Rot % 4) {
+        0 { $out += ,@($x, $y) }
+        1 { $out += ,@((3 - $y), $x) }
+        2 { $out += ,@((3 - $x), (3 - $y)) }
+        3 { $out += ,@($y, (3 - $x)) }
+    }
     }
     return ,$out
 }

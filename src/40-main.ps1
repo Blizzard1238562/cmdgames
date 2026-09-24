@@ -56,9 +56,10 @@ if ($SelfTest) {
             $failed += $g.name
         }
     }
-    # menu draw test
+    # menu draw test (Start-Screen first, like the real flow does)
     try {
         $script:TestFrames = 0
+        Start-Screen -H 30
         Show-Menu
         Write-Host '  ok   menu'
     } catch [ArcadeSelfTestDone] {

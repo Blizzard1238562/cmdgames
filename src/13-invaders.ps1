@@ -141,6 +141,7 @@ function Start-Invaders {
                 foreach ($b in $bullets) { Set-Cell -X ($bx + $b.x) -Y ($by + $b.y) -Char '|' -Fg 'yellow' }
                 foreach ($bo in $bombs) { Set-Cell -X ($bx + $bo.x) -Y ($by + $bo.y) -Char '!' -Fg 'red' }
                 Set-Text -X ($bx + $shipX - 1) -Y ($by + $bh - 1) -Text ('/' + $script:ChFull + '\') -Fg 'white'
+                Set-TextCentered -Y ($by + $bh + 2) -Text 'arrows move - SPACE shoots - q menu' -Fg 'dim'
                 Show-Frame
                 Wait-Frame 50
             }

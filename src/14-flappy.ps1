@@ -12,15 +12,17 @@ function Start-Flappy {
         $bx = 10; $by = 6
         $birdY = [double]([int]($bh / 2))
         $vel = 0.0
-        $pipes = @()      # @{x, gap}
+        # List[object] (NOT @() +=): PS arrays are fixed-size, RemoveAt would throw
+        $pipes = New-Object System.Collections.Generic.List[object]      # @{x, gap}
         $score = 0
         $frame = 0
         $gravity = 0.35
         $flapV = -1.6
         $speed = 0.7
         $gap = 7
+        $started = $false
 
-        for ($i = 0; $i -lt 3; $i++) { $pipes += @{ x = ($bw + 10 + $i * 24); gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) } }
+        for ($i = 0; $i -lt 3; $i++) { $pipes.Add(@{ x = ($bw + 10 + $i * 24); gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) }) }
 
         try {
             $running = $true
@@ -29,6 +31,33 @@ function Start-Flappy {
                 $keys = Get-KeysPressed
                 if (Mute-ToggleRequested $keys) { }
                 if ($keys -contains 'Q') { return }
+
+                # pre-start hover: bird floats until the first flap
+                if (-not $started) {
+                    if ($keys -contains 'Space' -or $keys -contains 'UpArrow' -or $keys -contains 'W') {
+                        $started = $true
+                        $vel = $flapV
+                        Play-Sfx -Freq 500 -Ms 20
+                    }
+                    Clear-Frame
+                    Set-GameHeader -Title $script:FlappyTitle -Score $score
+                    Draw-Box -X ($bx - 1) -Y ($by - 1) -W ($bw + 2) -H ($bh + 2) -Fg 'wall'
+                    foreach ($p in $pipes) {
+                        $px = [int][Math]::Floor($p.x)
+                        for ($y = 0; $y -lt $bh; $y++) {
+                            if ($y -lt $p.gap -or $y -gt ($p.gap + $gap)) {
+                                Set-Cell -X ($bx + $px) -Y ($by + $y) -Char $script:ChFull -Fg 'green'
+                                if ($px + 1 -lt $bw) { Set-Cell -X ($bx + $px + 1) -Y ($by + $y) -Char $script:ChFull -Fg 'green' }
+                            }
+                        }
+                    }
+                    Set-Cell -X ($bx + 4) -Y ($by + [int]$birdY) -Char $script:ChStar -Fg 'yellow'
+                    Set-TextCentered -Y ($by + $bh + 2) -Text 'press SPACE to flap - the bird falls, so keep tapping!' -Fg 'dim'
+                    Show-Frame
+                    Wait-Frame 50
+                    continue
+                }
+
                 if ($keys -contains 'Space' -or $keys -contains 'UpArrow' -or $keys -contains 'W') {
                     $vel = $flapV
                     Play-Sfx -Freq 500 -Ms 20
@@ -41,7 +70,7 @@ function Start-Flappy {
                 if ($pipes[0].x -lt -3) {
                     $pipes.RemoveAt(0)
                     $lastX = $pipes[$pipes.Count - 1].x
-                    $pipes += @{ x = $lastX + 24; gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) }
+                    $pipes.Add(@{ x = $lastX + 24; gap = (Get-Random -Minimum 3 -Maximum ($bh - $gap - 4)) })
                 }
 
                 # scoring
