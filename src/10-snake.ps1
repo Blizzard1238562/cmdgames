@@ -85,7 +85,7 @@ function Start-Snake {
                 for ($i = $snake.Count - 1; $i -ge 0; $i--) {
                     $seg = $snake[$i]
                     $ch = $script:ChFull; $col = 'green'
-                    if ($i -eq 0) { $ch = [string][char]0x25CF; $col = 'white' }
+                    if ($i -eq 0) { $ch = '@'; $col = 'white' }
                     Set-Cell -X $seg.x -Y $seg.y -Char $ch -Fg $col
                 }
                 Show-Frame

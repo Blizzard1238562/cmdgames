@@ -27,6 +27,8 @@ $script:SoundOn    = $true
 $script:PlayerName = ''
 $script:TestKeys   = New-Object System.Collections.Generic.Queue[string]
 $script:TestFrames = 0
+$script:CompatMode = $false   # true = no ANSI support -> classic console colors
+$script:SizeWarned = $false
 
 # ---- config / storage paths ----
 $script:ConfigDir  = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ps-arcade'
@@ -46,7 +48,7 @@ $script:Palette = @{
     'bg'     = 235
     'bg2'    = 237
     'fg'     = 250
-    'dim'    = 243
+    'dim'    = 245
     'accent' = 108
     'green'  = 107
     'red'    = 174
@@ -70,17 +72,17 @@ $script:ChFR     = [string][char]0x2518  # bottom-right corner
 $script:ChFull   = [string][char]0x2588  # full block
 $script:ChMed    = [string][char]0x2592  # medium shade
 $script:ChLight  = [string][char]0x2591  # light shade
-$script:ChDot    = [string][char]0x00B7  # middle dot
-$script:ChDiam   = [string][char]0x25C6  # diamond
-$script:ChHeart  = [string][char]0x2665  # heart
-$script:ChUp     = [string][char]0x25B2  # up triangle
-$script:ChDown   = [string][char]0x25BC  # down triangle
-$script:ChLeft   = [string][char]0x25C4  # left triangle
-$script:ChRight  = [string][char]0x25BA  # right triangle
-$script:ChArrow  = [string][char]0x2192  # right arrow
-$script:ChCheck  = [string][char]0x2713  # check mark
-$script:ChStar   = [string][char]0x2605  # star
-$script:ChSmile  = [string][char]0x263A  # smiley
+$script:ChDot    = [string][char]0x00B7  # middle dot (in CP437 raster fonts)
+$script:ChDiam   = [string][char]0x25C6  # diamond (in CP437 raster fonts)
+$script:ChHeart  = [string][char]0x2665  # heart (in CP437 raster fonts)
+$script:ChUp     = [string][char]0x25B2  # up triangle (in CP437 raster fonts)
+$script:ChDown   = [string][char]0x25BC  # down triangle (in CP437 raster fonts)
+$script:ChLeft   = [string][char]0x25C4  # left triangle (in CP437 raster fonts)
+$script:ChRight  = [string][char]0x25BA  # right triangle (in CP437 raster fonts)
+$script:ChArrow  = '>'                   # menu cursor (ASCII: renders everywhere)
+$script:ChCheck  = '*'                   # ASCII fallback
+$script:ChStar   = [string][char]0x263C  # sun glyph (CP437 0x0F, renders everywhere)
+$script:ChSmile  = [string][char]0x263A  # smiley (CP437 0x01)
 
 function Get-ColorCode {
     param([string]$Name)
@@ -101,7 +103,9 @@ $script:FbCh = $null
 $script:FbFg = $null
 $script:FbBg = $null
 
-function Enable-VirtualTerminal {
+function Test-VtSupport {
+    # Enables the VT bit and reads the mode back to verify it really stuck.
+    # Some hosts (PowerShell ISE, very old conhosts) silently ignore it.
     try {
         $sig = @'
 [DllImport("kernel32.dll", SetLastError = true)]
@@ -111,17 +115,47 @@ public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode)
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 '@
-        $t = Add-Type -MemberDefinition $sig -Name 'NativeConsole' -Namespace 'Arcade' -PassThru
+        Add-Type -MemberDefinition $sig -Name 'NativeConsole' -Namespace 'Arcade' -ErrorAction SilentlyContinue
         $h = [Arcade.NativeConsole]::GetStdHandle(-11)
         $mode = [uint32]0
-        [void][Arcade.NativeConsole]::GetConsoleMode($h, [ref]$mode)
-        [void][Arcade.NativeConsole]::SetConsoleMode($h, ($mode -bor 0x0004))
-    } catch { }
+        if (-not [Arcade.NativeConsole]::GetConsoleMode($h, [ref]$mode)) { return $false }
+        if (-not [Arcade.NativeConsole]::SetConsoleMode($h, ($mode -bor 0x0004))) { return $false }
+        $check = [uint32]0
+        [void][Arcade.NativeConsole]::GetConsoleMode($h, [ref]$check)
+        return (($check -band 0x0004) -ne 0)
+    } catch { return $false }
+}
+
+function Initialize-CompatColors {
+    # Maps the 256-color palette onto the 16 classic console colors.
+    $script:CompatFg = @{
+        235 = 'Black'; 234 = 'Black'; 237 = 'DarkGray'; 240 = 'DarkGray'
+        243 = 'DarkGray'; 250 = 'Gray'; 254 = 'White'
+        107 = 'DarkGreen'; 108 = 'DarkGreen'
+        116 = 'DarkCyan'; 109 = 'DarkCyan'
+        139 = 'DarkMagenta'; 174 = 'Red'
+        179 = 'DarkYellow'; 180 = 'DarkYellow'
+    }
+    $script:CompatBg = @{
+        235 = 'Black'; 234 = 'Black'; 237 = 'Black'; 240 = 'Black'
+        243 = 'DarkGray'; 250 = 'Gray'; 254 = 'White'
+        107 = 'DarkGreen'; 108 = 'DarkGreen'
+        116 = 'DarkCyan'; 109 = 'DarkCyan'
+        139 = 'DarkMagenta'; 174 = 'DarkRed'
+        179 = 'DarkYellow'; 180 = 'DarkYellow'
+    }
 }
 
 function Initialize-Console {
     try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
-    Enable-VirtualTerminal
+    Initialize-CompatColors
+    if (Test-VtSupport) {
+        $script:CompatMode = $false
+        # alternate screen buffer: no scrollback ghosts, no leftover shell text
+        try { [Console]::Out.Write("$($script:ESC)[?1049h$($script:ESC)[2J") } catch { }
+    } else {
+        $script:CompatMode = $true
+    }
     try { $Host.UI.RawUI.WindowTitle = $script:AppName } catch { }
     try {
         $ui = $Host.UI.RawUI
@@ -145,7 +179,11 @@ function Initialize-Console {
 function Restore-Console {
     try { [Console]::CursorVisible = $true } catch { }
     try { [Console]::ResetColor() } catch { }
-    Write-Host "$($script:ESC)[0m$($script:ESC)[2J$($script:ESC)[H" -NoNewline
+    if ($script:CompatMode) {
+        Write-Host ''
+    } else {
+        Write-Host "$($script:ESC)[0m$($script:ESC)[?1049l" -NoNewline
+    }
 }
 
 function Clear-Console {
@@ -159,6 +197,7 @@ function Start-Screen {
     param([int]$H = 30)
     Clear-Console
     New-Frame -W 80 -H $H -Bg 'bg'
+    Test-WindowSize
 }
 
 function New-Frame {
@@ -257,10 +296,67 @@ function Draw-Box {
     }
 }
 
+function Test-WindowSize {
+    # Warn once if the console window cannot fit the frame.
+    if ($script:Headless) { return }
+    try {
+        $ui = $Host.UI.RawUI
+        $w = $ui.WindowSize.Width; $h = $ui.WindowSize.Height
+        if ($w -lt ($script:FbW + 2) -or $h -lt ($script:FbH + 2)) {
+            if (-not $script:SizeWarned) {
+                $script:SizeWarned = $true
+                try { [Console]::ForegroundColor = [ConsoleColor]::Yellow } catch { }
+                Write-Host ''
+                Write-Host (' window too small: needs ' + ($script:FbW + 2) + 'x' + ($script:FbH + 2) + ', got ' + $w + 'x' + $h)
+                Write-Host ' enlarge this window or zoom out (ctrl + minus) - starting anyway...'
+                try { [Console]::ResetColor() } catch { }
+                Start-Sleep -Seconds 2
+            }
+        }
+    } catch { }
+}
+
+function Show-FrameCompat {
+    # Fallback renderer for hosts without ANSI/VT support: classic 16-color
+    # console colors, run-length grouped so it stays reasonably fast.
+    try { [Console]::SetCursorPosition(0, 0) } catch { }
+    for ($y = 0; $y -lt $script:FbH; $y++) {
+        $row = $y * $script:FbW
+        $run = New-Object System.Text.StringBuilder 128
+        $pf = $null; $pb = $null
+        for ($x = 0; $x -lt $script:FbW; $x++) {
+            $i = $row + $x
+            $c = $script:FbCh[$i]
+            $cf = $script:CompatFg[$script:FbFg[$i]]; if ($null -eq $cf) { $cf = [ConsoleColor]::Gray }
+            $cb = $script:CompatBg[$script:FbBg[$i]]; if ($null -eq $cb) { $cb = [ConsoleColor]::Black }
+            if ($cf -ne $pf -or $cb -ne $pb) {
+                if ($run.Length -gt 0) {
+                    try { [Console]::ForegroundColor = $pf; [Console]::BackgroundColor = $pb } catch { }
+                    [Console]::Write($run.ToString())
+                    [void]$run.Clear()
+                }
+                $pf = $cf; $pb = $cb
+            }
+            [void]$run.Append($c)
+        }
+        if ($run.Length -gt 0) {
+            try { [Console]::ForegroundColor = $pf; [Console]::BackgroundColor = $pb } catch { }
+            [Console]::Write($run.ToString())
+        }
+        try { [Console]::ResetColor() } catch { }
+        [Console]::Write("`n")
+    }
+    try { [Console]::ResetColor() } catch { }
+}
+
 function Show-Frame {
     # Builds ONE ansi string and writes it in a single call (no flicker).
     if ($script:Headless) {
         if ($script:TestFrames -gt 400) { throw (New-Object ArcadeSelfTestDone) }
+        return
+    }
+    if ($script:CompatMode) {
+        Show-FrameCompat
         return
     }
     $sb = New-Object System.Text.StringBuilder 16384
@@ -268,7 +364,10 @@ function Show-Frame {
     $pf = -1; $pb = -1
     for ($y = 0; $y -lt $script:FbH; $y++) {
         $rowStart = $y * $script:FbW
-        for ($x = 0; $x -lt $script:FbW; $x++) {
+        # skip trailing spaces: less to render, cleaner look
+        $last = $script:FbW - 1
+        while ($last -ge 0 -and $script:FbCh[$rowStart + $last] -eq ' ') { $last-- }
+        for ($x = 0; $x -le $last; $x++) {
             $i = $rowStart + $x
             $c = $script:FbCh[$i]
             $f = $script:FbFg[$i]; $b = $script:FbBg[$i]
@@ -684,7 +783,7 @@ function Start-Snake {
                 for ($i = $snake.Count - 1; $i -ge 0; $i--) {
                     $seg = $snake[$i]
                     $ch = $script:ChFull; $col = 'green'
-                    if ($i -eq 0) { $ch = [string][char]0x25CF; $col = 'white' }
+                    if ($i -eq 0) { $ch = '@'; $col = 'white' }
                     Set-Cell -X $seg.x -Y $seg.y -Char $ch -Fg $col
                 }
                 Show-Frame
@@ -1916,11 +2015,14 @@ $script:Games = @(
 
 function Show-MenuLogo {
     param([int]$Y = 6)
+    # 70 cols wide, CP437 box glyphs only -> renders in every console font
     $art = @(
-        ' ____   __  ___  ______  ____    ___   ___     ___  __ __  ____  _  _  ___  ____ ',
-        '(  _ \ /  \(  _)(  __  )(  _ \  / __) / __)   / __)(  )  )(  _ \( \/ )/ __)(  _ \ ',
-        ' ) _ ((  O )) _) ) _)  (  __)_ ( (_ \( (_ \  ( (_ \ / __/\ ) __/ )  (( (_ \ )   /',
-        '(____/ \__/(__) (__)    \____)  \___/ \___/   \___/(___/ (__)  (__/ \___/ (__\_)'
+        'â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—       â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—',
+        'â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â•â•â•      â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â•â•â•â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â•â•â•',
+        'â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•”â•â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•”â•â–ˆâ–ˆâ•‘     â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—',
+        'â–ˆâ–ˆâ•”â•â•â•â• â•šâ•â•â•â•â–ˆâ–ˆâ•‘â•šâ•â•â•â•â•â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•‘     â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•”â•â•â•',
+        'â–ˆâ–ˆâ•‘     â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•‘      â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â•šâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•”â•â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—',
+        'â•šâ•â•     â•šâ•â•â•â•â•â•â•      â•šâ•â•  â•šâ•â•â•šâ•â•  â•šâ•â• â•šâ•â•â•â•â•â•â•šâ•â•  â•šâ•â•â•šâ•â•â•â•â•â• â•šâ•â•â•â•â•â•â•'
     )
     for ($i = 0; $i -lt $art.Count; $i++) {
         Set-TextCentered -Y ($Y + $i) -Text $art[$i] -Fg 'accent'

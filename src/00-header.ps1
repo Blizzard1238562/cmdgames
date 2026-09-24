@@ -21,6 +21,8 @@ $script:SoundOn    = $true
 $script:PlayerName = ''
 $script:TestKeys   = New-Object System.Collections.Generic.Queue[string]
 $script:TestFrames = 0
+$script:CompatMode = $false   # true = no ANSI support -> classic console colors
+$script:SizeWarned = $false
 
 # ---- config / storage paths ----
 $script:ConfigDir  = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ps-arcade'
@@ -40,7 +42,7 @@ $script:Palette = @{
     'bg'     = 235
     'bg2'    = 237
     'fg'     = 250
-    'dim'    = 243
+    'dim'    = 245
     'accent' = 108
     'green'  = 107
     'red'    = 174
@@ -64,17 +66,17 @@ $script:ChFR     = [string][char]0x2518  # bottom-right corner
 $script:ChFull   = [string][char]0x2588  # full block
 $script:ChMed    = [string][char]0x2592  # medium shade
 $script:ChLight  = [string][char]0x2591  # light shade
-$script:ChDot    = [string][char]0x00B7  # middle dot
-$script:ChDiam   = [string][char]0x25C6  # diamond
-$script:ChHeart  = [string][char]0x2665  # heart
-$script:ChUp     = [string][char]0x25B2  # up triangle
-$script:ChDown   = [string][char]0x25BC  # down triangle
-$script:ChLeft   = [string][char]0x25C4  # left triangle
-$script:ChRight  = [string][char]0x25BA  # right triangle
-$script:ChArrow  = [string][char]0x2192  # right arrow
-$script:ChCheck  = [string][char]0x2713  # check mark
-$script:ChStar   = [string][char]0x2605  # star
-$script:ChSmile  = [string][char]0x263A  # smiley
+$script:ChDot    = [string][char]0x00B7  # middle dot (in CP437 raster fonts)
+$script:ChDiam   = [string][char]0x25C6  # diamond (in CP437 raster fonts)
+$script:ChHeart  = [string][char]0x2665  # heart (in CP437 raster fonts)
+$script:ChUp     = [string][char]0x25B2  # up triangle (in CP437 raster fonts)
+$script:ChDown   = [string][char]0x25BC  # down triangle (in CP437 raster fonts)
+$script:ChLeft   = [string][char]0x25C4  # left triangle (in CP437 raster fonts)
+$script:ChRight  = [string][char]0x25BA  # right triangle (in CP437 raster fonts)
+$script:ChArrow  = '>'                   # menu cursor (ASCII: renders everywhere)
+$script:ChCheck  = '*'                   # ASCII fallback
+$script:ChStar   = [string][char]0x263C  # sun glyph (CP437 0x0F, renders everywhere)
+$script:ChSmile  = [string][char]0x263A  # smiley (CP437 0x01)
 
 function Get-ColorCode {
     param([string]$Name)
