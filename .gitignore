@@ -3,3 +3,4 @@ create_result.json
 supabase/.temp/
 supabase/.branches/
 freebuff-chat-*.md
+test_*.ps1
