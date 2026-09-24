@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build arcade.ps1
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          $errs = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'arcade.ps1'), [ref]$null, [ref]$errs)
+          if ($errs.Count -gt 0) { $errs | ForEach-Object { $_.Message }; exit 1 }
+
+      - name: Smoke test all games (headless)
+        shell: pwsh
+        run: ./arcade.ps1 -SelfTest

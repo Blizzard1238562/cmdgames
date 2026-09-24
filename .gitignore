@@ -1,0 +1,5 @@
+.dbpw.tmp
+create_result.json
+supabase/.temp/
+supabase/.branches/
+freebuff-chat-*.md
