@@ -17,7 +17,15 @@ foreach ($f in $files) {
     Write-Host ("  + " + $f.Name)
     [void]$sb.AppendLine()
     [void]$sb.AppendLine(('# ---- ' + $f.Name + ' ----'))
-    [void]$sb.AppendLine((Get-Content -Raw -Path $f.FullName))
+    $content = Get-Content -Raw -Path $f.FullName
+    # ASCII-only enforcement: non-ASCII source breaks `irm | iex` because
+    # PS 5.1 decodes the download as Latin-1 and mojibake corrupts strings.
+    $bad = [regex]::Matches($content, '[^\x00-\x7F]')
+    if ($bad.Count -gt 0) {
+        $codes = ($bad | Select-Object -First 5 | ForEach-Object { 'U+{0:X4}' -f [int]($_.Value[0]) }) -join ' '
+        throw ($f.Name + ' contains non-ASCII characters (' + $codes + ') - use [char]0xNNNN escapes instead')
+    }
+    [void]$sb.AppendLine($content)
 }
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText($out, $sb.ToString(), $utf8)
