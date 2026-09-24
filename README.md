@@ -45,7 +45,9 @@ Global keys in every game: `q` back to menu · `m` mute · `esc` back.
 To enable the global board:
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Run the SQL from `supabase/schema.sql` in the Supabase SQL editor.
+2. Apply the SQL in order: `supabase/migrations/20260924000000_init.sql`,
+   then `supabase/migrations/20260924010000_hardening.sql`
+   (Supabase SQL editor, or `supabase db push`).
 3. Set your credentials (either option works):
    - env vars before starting:
      ```powershell
@@ -58,16 +60,29 @@ To enable the global board:
      { "supabaseUrl": "https://YOURPROJECT.supabase.co", "supabaseKey": "YOUR-ANON-KEY" }
      ```
 
-The anon key is safe to distribute: the table allows anonymous INSERT/SELECT
-only (no updates/deletes), enforced by row level security.
+The anon key is safe to distribute (the script ships with it baked in).
+
+### Anti-cheat / security model
+
+The public anon key **cannot** write arbitrary scores. All writes go through
+a server-side RPC (`submit_score`) that enforces:
+
+- **game whitelist** — only the 10 known game ids are accepted
+- **score ceiling** — scores above 1,000,000 are rejected
+- **name sanitizing** — control/unicode chars stripped, charset + length limits
+- **rate limiting per IP** — 1 submission/minute, 30/day (logged internally)
+- **no direct table access** — `INSERT/UPDATE/DELETE/TRUNCATE` revoked from
+  anon; the submissions log is invisible to anon too; SELECT is the only
+  thing the public key can do.
 
 ## For developers
 
 ```
 src/           game + engine sources, concatenated in filename order
-build.ps1      builds the single-file arcade.ps1 (UTF8 BOM for PS 5.1)
+build.ps1      builds the single-file arcade.ps1 (plain UTF-8, no BOM -
+               a BOM would break `irm url | iex`)
 arcade.ps1     generated artifact - do not edit by hand
-supabase/      leaderboard schema
+supabase/      leaderboard schema + hardening migrations
 ```
 
 ```powershell

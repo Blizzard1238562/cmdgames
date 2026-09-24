@@ -84,18 +84,20 @@ function Add-LocalScore {
 function Test-OnlineScores { return ($script:SupabaseUrl.Length -gt 0 -and $script:SupabaseKey.Length -gt 0) }
 
 function Send-OnlineScore {
+    # Submits through the server-side RPC, which validates game id, score
+    # range and name, and rate-limits per IP. Direct table inserts are
+    # blocked by RLS/grants, so this is the only path that works.
     param([string]$GameId, [string]$Name, [int]$Score)
     if (-not (Test-OnlineScores)) { return $false }
     try {
-        $uri = "$($script:SupabaseUrl)/rest/v1/scores"
+        $uri = "$($script:SupabaseUrl)/rest/v1/rpc/submit_score"
         $headers = @{
             apikey        = $script:SupabaseKey
             Authorization = "Bearer $($script:SupabaseKey)"
             'Content-Type' = 'application/json'
-            Prefer        = 'return=minimal'
         }
-        $body = @{ game = $GameId; name = $Name; score = $Score } | ConvertTo-Json -Compress
-        Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body -TimeoutSec 4 | Out-Null
+        $body = @{ p_game = $GameId; p_name = $Name; p_score = $Score } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body -TimeoutSec 5 | Out-Null
         return $true
     } catch { return $false }
 }
