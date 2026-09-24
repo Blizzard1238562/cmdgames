@@ -33,37 +33,82 @@ function Show-MenuLogo {
 }
 
 function Show-HighscoresScreen {
-    Clear-Frame
-    Draw-Box -X 10 -Y 3 -W 60 -H 25 -Title ' global high scores ' -Fg 'accent'
-    $games = @('snake','tetris','2048','invaders','flappy','breakout','frogger','dodge','ttt','hangman')
-    $x = 14
-    foreach ($gid in $games) {
-        $online = Get-OnlineScores -GameId $gid
-        $list = @()
-        if ($null -ne $online) { $list = @($online) } else { $list = @(Get-LocalScores -GameId $gid) }
+    # One game per page: rank / player / score in clean columns.
+    # left/right flips pages, esc goes back. Starts on the game the
+    # player selected in the menu.
+    param([string]$GameId = 'snake')
+    $ids = @('snake','tetris','2048','invaders','flappy','breakout','frogger','dodge','ttt','hangman')
+    if ($ids -notcontains $GameId) { $GameId = 'snake' }
+    $idx = $ids.IndexOf($GameId)
+
+    while ($true) {
+        $gid = $ids[$idx]
         $g = $script:Games | Where-Object { $_.id -eq $gid }
-        Set-Text -X $x -Y 5 -Text ('-- ' + $g.name + ' --').ToLower() -Fg 'accent'
-        $y = 7
-        if ($list.Count -eq 0) {
-            Set-Text -X $x -Y $y -Text '(no scores yet)' -Fg 'dim'
-            $y++
+        $online = Get-OnlineScores -GameId $gid
+        if ($null -ne $online) {
+            $list = @($online)
+            $source = 'global leaderboard (live)'
+            $srcCol = 'cyan'
         } else {
-            for ($i = 0; $i -lt [Math]::Min(5, $list.Count); $i++) {
-                $line = '{0}. {1}' -f ($i + 1), $list[$i].name
-                $line = $line.PadRight(18) + ('{0,6}' -f $list[$i].score)
-                Set-Text -X $x -Y $y -Text $line -Fg $(if ($i -eq 0) { 'yellow' } else { 'fg' })
+            $list = @(Get-LocalScores -GameId $gid)
+            $source = 'local scores (offline mode)'
+            $srcCol = 'dim'
+        }
+
+        Clear-Frame
+        Draw-Box -X 10 -Y 3 -W 60 -H 24 -Title ' high scores ' -Fg 'accent'
+
+        # pager header:  <  Game Name  >
+        Set-Text -X 14 -Y 5 -Text '<' -Fg 'dim'
+        Set-Text -X 65 -Y 5 -Text '>' -Fg 'dim'
+        Set-TextCentered -Y 5 -Text ([string]$g.name) -Fg 'yellow'
+        Set-TextCentered -Y 6 -Text ([string]$g.desc) -Fg 'dim'
+
+        # column headers (score right-aligned with the values below)
+        Set-Text -X 16 -Y 8 -Text '#' -Fg 'dim'
+        Set-Text -X 20 -Y 8 -Text 'player' -Fg 'dim'
+        Set-Text -X 59 -Y 8 -Text 'score' -Fg 'dim'
+
+        if ($list.Count -eq 0) {
+            Set-TextCentered -Y 13 -Text 'no scores yet' -Fg 'dim'
+            Set-TextCentered -Y 14 -Text 'be the first!' -Fg 'dim'
+        } else {
+            $y = 9
+            for ($i = 0; $i -lt [Math]::Min(10, $list.Count); $i++) {
+                $rank = $i + 1
+                $name = [string]$list[$i].name
+                if ($name.Length -gt 16) { $name = $name.Substring(0, 16) }
+                $scoreStr = '{0}' -f [int]$list[$i].score
+                $col = 'fg'
+                if ($rank -eq 1) { $col = 'yellow' }
+                Set-Text -X 16 -Y $y -Text ('{0,2}.' -f $rank) -Fg $col
+                Set-Text -X 20 -Y $y -Text $name.PadRight(17) -Fg $col
+                Set-Text -X (64 - $scoreStr.Length) -Y $y -Text $scoreStr -Fg $col
+                if ($script:PlayerName -and $name -eq $script:PlayerName) {
+                    Set-Text -X 38 -Y $y -Text '<- you' -Fg 'accent'
+                }
                 $y++
             }
         }
-        if ($x -eq 14) { $x = 40 } else { $x = 14; $y = 7; $curY = 0 }
-        $curY = 0
+
+        # personal best + footer (all inside the box)
+        $local = @(Get-LocalScores -GameId $gid)
+        $pb = 'your local best: --'
+        if ($local.Count -gt 0) { $pb = 'your local best: {0}  ({1})' -f $local[0].score, $local[0].name }
+        Set-TextCentered -Y 20 -Text $pb -Fg 'dim'
+        Set-TextCentered -Y 22 -Text 'left/right: other games   esc: back' -Fg 'dim'
+        Set-TextCentered -Y 23 -Text $source -Fg $srcCol
+        Show-Frame
+
+        $k = Wait-RealKey
+        switch ($k) {
+            'LeftArrow'  { $idx = ($idx - 1 + $ids.Count) % $ids.Count }
+            'RightArrow' { $idx = ($idx + 1) % $ids.Count }
+            'A'          { $idx = ($idx - 1 + $ids.Count) % $ids.Count }
+            'D'          { $idx = ($idx + 1) % $ids.Count }
+            { $_ -in @('Q', 'Escape', 'Enter', 'Space') } { return }
+        }
     }
-    if (Test-OnlineScores) { Set-Text -X 12 -Y 26 -Text 'live from supabase' -Fg 'cyan' }
-    else { Set-Text -X 12 -Y 26 -Text 'local scores only (offline mode)' -Fg 'dim' }
-    Set-TextCentered -Y 27 -Text 'press any key to go back' -Fg 'dim'
-    Show-Frame
-    Clear-KeyBuffer
-    [void](Wait-KeyAny)
 }
 
 function Show-HelpScreen {
@@ -136,7 +181,7 @@ function Show-Menu {
                 & $g.fn
                 Start-Screen -H 30
             }
-            'H' { Show-HighscoresScreen }
+            'H' { Show-HighscoresScreen -GameId $script:Games[$sel].id }
             { $_ -in @('OemQuestion', 'Slash', 'F1') } { Show-HelpScreen }
             'M' { $script:SoundOn = -not $script:SoundOn; Save-ArcadeConfig }
             { $_ -in @('Q', 'Escape') } { return }
