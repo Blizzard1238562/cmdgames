@@ -239,10 +239,13 @@ function Set-Text {
     $bc = if ($Bg) { Get-ColorCode $Bg } else { -1 }
     $row = $Y * $script:FbW
     $len = $Text.Length
+    # NOTE: PowerShell variables are case-insensitive, so the loop var must
+    # NOT be named $x here - it would collide with the $X parameter and the
+    # position would accumulate across iterations (letters drifting apart).
     for ($i = 0; $i -lt $len; $i++) {
-        $x = $X + $i
-        if ($x -lt 0 -or $x -ge $script:FbW) { continue }
-        $idx = $row + $x
+        $cx = $X + $i
+        if ($cx -lt 0 -or $cx -ge $script:FbW) { continue }
+        $idx = $row + $cx
         $script:FbCh[$idx] = $Text[$i]
         $script:FbFg[$idx] = $fc
         if ($bc -ge 0) { $script:FbBg[$idx] = $bc }
