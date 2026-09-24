@@ -308,7 +308,10 @@ function Get-KeysPressed {
     try {
         while ([Console]::KeyAvailable) {
             $k = [Console]::ReadKey($true)
-            $keys += [string]$k.Key
+            $kn = [string]$k.Key
+            # .NET calls the key 'Spacebar', but every game checks 'Space'
+            if ($kn -eq 'Spacebar') { $kn = 'Space' }
+            $keys += $kn
         }
     } catch { }
     return ,@($keys)

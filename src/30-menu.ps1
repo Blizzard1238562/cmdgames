@@ -142,6 +142,8 @@ function Show-HelpScreen {
 function Show-Menu {
     $sel = 0
     while ($true) {
+        # retry any online submits that failed earlier (rate limit / offline)
+        Flush-PendingOnlineScores
         Clear-Frame
         Show-MenuLogo -Y 3
         Set-TextCentered -Y 10 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'

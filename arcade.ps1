@@ -403,7 +403,10 @@ function Get-KeysPressed {
     try {
         while ([Console]::KeyAvailable) {
             $k = [Console]::ReadKey($true)
-            $keys += [string]$k.Key
+            $kn = [string]$k.Key
+            # .NET calls the key 'Spacebar', but every game checks 'Space'
+            if ($kn -eq 'Spacebar') { $kn = 'Space' }
+            $keys += $kn
         }
     } catch { }
     return ,@($keys)
@@ -502,6 +505,8 @@ function Initialize-ArcadeConfig {
     }
     $script:SoundOn = $true
     $script:PlayerName = ''
+    $script:PendingOnline = @{ }
+    $script:PendingLastTry = [datetime]::MinValue
     if (Test-Path $script:ConfigFile) {
         try {
             $c = Get-Content -Raw -Path $script:ConfigFile | ConvertFrom-Json
@@ -596,6 +601,28 @@ function Send-OnlineScore {
     } catch { return $false }
 }
 
+# Online submits are rate-limited server-side (1/min per IP). If a send
+# fails (rate limit / network), keep the best unsent score per game and
+# retry it on a later game over or menu visit.
+function Add-PendingOnlineScore {
+    param([string]$GameId, [int]$Score)
+    if (-not $script:PendingOnline.ContainsKey($GameId) -or $Score -gt [int]$script:PendingOnline[$GameId]) {
+        $script:PendingOnline[$GameId] = $Score
+    }
+}
+
+function Flush-PendingOnlineScores {
+    if ($script:PendingOnline.Count -eq 0) { return }
+    if (-not (Test-OnlineScores)) { return }
+    if (((Get-Date) - $script:PendingLastTry).TotalSeconds -lt 45) { return }
+    $script:PendingLastTry = Get-Date
+    foreach ($gid in @($script:PendingOnline.Keys)) {
+        if (Send-OnlineScore -GameId $gid -Name $script:PlayerName -Score ([int]$script:PendingOnline[$gid])) {
+            $script:PendingOnline.Remove($gid)
+        }
+    }
+}
+
 function Get-OnlineScores {
     param([string]$GameId)
     if (-not (Test-OnlineScores)) { return $null }
@@ -645,10 +672,11 @@ function Read-PlayerName {
 # ---------- game over / score flow ----------
 
 function Show-GameOverScreen {
-    param([string]$GameName, [int]$Score, [string]$Note = '')
+    param([string]$GameName, [int]$Score, [string]$Note = '', [string]$SubNote = '')
     Draw-Box -X 20 -Y 11 -W 40 -H 8 -Title ' game over ' -Fg 'red' -FillBg 'bg2'
     Set-TextCentered -Y 13 -Text ('{0} - score {1}' -f $GameName, $Score) -Fg 'white' -Bg 'bg2'
     if ($Note.Length -gt 0) { Set-TextCentered -Y 14 -Text $Note -Fg 'yellow' -Bg 'bg2' }
+    if ($SubNote.Length -gt 0) { Set-TextCentered -Y 15 -Text $SubNote -Fg 'dim' -Bg 'bg2' }
     Set-TextCentered -Y 16 -Text '[R] play again    [Q] menu' -Fg 'fg' -Bg 'bg2'
     Show-Frame
     Clear-KeyBuffer
@@ -661,44 +689,37 @@ function Show-GameOverScreen {
 }
 
 function Complete-Game {
-    # Called when a run ends. Handles game-over art, score saving,
-    # leaderboard display. Returns $true if the player wants a rematch.
+    # Called when a run ends. The score is saved BEFORE the game-over
+    # prompt, so [R] retry runs are recorded too. The 'personal best'
+    # note compares against the player's own previous best for this game.
+    # Returns $true if the player wants a rematch.
     param([string]$GameId, [string]$GameName, [int]$Score, [string]$Note = '')
 
     if ($script:Headless) { return $false }
 
-    $locals = @(Get-LocalScores -GameId $GameId)
-    $qualifies = $Score -gt 0 -and ($locals.Count -lt 10 -or $Score -gt [int]($locals[$locals.Count - 1].score))
     $note = $Note
-    if ($qualifies) { $note = 'new personal best!' }
-
-    $retry = Show-GameOverScreen -GameName $GameName -Score $Score -Note $note
-
-    if ($qualifies -and -not $retry) {
-        $script:PlayerName = Read-PlayerName -Default $script:PlayerName
-        $rank = Add-LocalScore -GameId $GameId -Name $script:PlayerName -Score $Score
-        Save-ArcadeConfig
-        $online = Send-OnlineScore -GameId $GameId -Name $script:PlayerName -Score $Score
-        if ($rank -eq 1) { Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90 }
-        $msg = 'saved locally'
-        if ($online) { $msg = 'saved locally + uploaded to global board' }
-        Draw-Box -X 14 -Y 9 -W 52 -H 12 -Title ' high scores ' -Fg 'accent' -FillBg 'bg2'
-        Set-Text -X 17 -Y 11 -Text ('rank #{0} - {1}' -f $rank, $msg) -Fg 'yellow' -Bg 'bg2'
-        $top = @(Get-LocalScores -GameId $GameId)
-        $y = 13
-        for ($i = 0; $i -lt [Math]::Min(5, $top.Count); $i++) {
-            $line = '{0}. {1}' -f ($i + 1), $top[$i].name
-            $line = $line.PadRight(22) + ('{0,6}' -f $top[$i].score)
-            Set-Text -X 20 -Y $y -Text $line -Fg $(if ($i -eq ($rank - 1)) { 'yellow' } else { 'fg' }) -Bg 'bg2'
-            $y++
+    $sub = ''
+    if ($Score -gt 0) {
+        Flush-PendingOnlineScores
+        $locals = @(Get-LocalScores -GameId $GameId)
+        $prevBest = 0
+        foreach ($e in $locals) {
+            if ($e.name -eq $script:PlayerName -and [int]$e.score -gt $prevBest) { $prevBest = [int]$e.score }
         }
-        Set-TextCentered -Y 19 -Text 'press any key' -Fg 'dim' -Bg 'bg2'
-        Show-Frame
-        Clear-KeyBuffer
-        [void](Wait-KeyAny)
-        return $false
+        $rank = Add-LocalScore -GameId $GameId -Name $script:PlayerName -Score $Score
+        $online = $false
+        if (Test-OnlineScores) {
+            $online = Send-OnlineScore -GameId $GameId -Name $script:PlayerName -Score $Score
+            if (-not $online) { Add-PendingOnlineScore -GameId $GameId -Score $Score }
+        }
+        if ($Score -gt $prevBest) { $note = 'new personal best!' }
+        $rankTxt = ''
+        if ($rank -gt 0) { $rankTxt = ' - local rank #{0}' -f $rank }
+        if ($online) { $sub = 'score uploaded' + $rankTxt } else { $sub = 'saved locally' + $rankTxt }
+        if ($rank -eq 1) { Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90 }
     }
-    return $retry
+
+    return (Show-GameOverScreen -GameName $GameName -Score $Score -Note $note -SubNote $sub)
 }
 
 
@@ -2187,6 +2208,8 @@ function Show-HelpScreen {
 function Show-Menu {
     $sel = 0
     while ($true) {
+        # retry any online submits that failed earlier (rate limit / offline)
+        Flush-PendingOnlineScores
         Clear-Frame
         Show-MenuLogo -Y 3
         Set-TextCentered -Y 10 -Text ('a tiny terminal arcade - 10 games - hi ' + $(if ($script:PlayerName) { $script:PlayerName } else { 'player' })) -Fg 'dim'
