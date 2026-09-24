@@ -1,4 +1,5 @@
-# Builds arcade.ps1 by concatenating src/ modules in name order (UTF8 BOM for PS 5.1).
+# Builds arcade.ps1 by concatenating src/ modules in name order.
+# NO BOM: the file is pure ASCII, and a BOM breaks `irm url | iex` parsing.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src  = Join-Path $root 'src'
@@ -18,6 +19,6 @@ foreach ($f in $files) {
     [void]$sb.AppendLine(('# ---- ' + $f.Name + ' ----'))
     [void]$sb.AppendLine((Get-Content -Raw -Path $f.FullName))
 }
-$utf8Bom = New-Object System.Text.UTF8Encoding $true
-[System.IO.File]::WriteAllText($out, $sb.ToString(), $utf8Bom)
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($out, $sb.ToString(), $utf8)
 Write-Host ("built " + $out + " (" + [int]((Get-Item $out).Length / 1KB) + " KB)")
