@@ -1960,7 +1960,7 @@ A.showChallengeScreen = async function () {
         A.setText(xx + 9, yy, A.games[i].name, 'fg');
     }
     A.setText(17, 19, '> '.padEnd(14), 'yellow');
-    A.setTextCentered(21, 'type a code like AA-004821-1, enter = check', 'dim');
+    A.setTextCentered(21, 'type a code like AF-004821-1, enter = check', 'dim');
     A.showFrame();
     var code = '';
     while (true) {
