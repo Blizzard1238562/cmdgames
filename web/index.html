@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>PS-ARCADE web</title>
 <style>
     html, body {
@@ -38,6 +38,8 @@
     #pad button:active { background: #4a4a52; }
     #t-a { background: #3d4a3d !important; border-radius: 50% !important; }
     @media (pointer: coarse) { #pad { display: grid; } }
+    #hint { display: block; font-size: 12px; color: #777; margin-top: 8px; text-align: center; }
+    @media (pointer: coarse) { #hint { display: none; } }
 </style>
 </head>
 <body>
@@ -53,6 +55,7 @@
         <button id="t-m">M</button>
         <button id="t-h">H</button>
     </div>
+    <div id="hint">arrows / wasd move &middot; space action &middot; enter select &middot; h highscores &middot; c challenge &middot; m sound &middot; q back</div>
 </div>
 <script src="app.js"></script>
 </body>

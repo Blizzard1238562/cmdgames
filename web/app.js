@@ -2167,12 +2167,20 @@ A.splash = async function () {
     A.showFrame();
     await A.sleep(600);
     if (!A.playerName) {
-        A.clearFrame();
-        A.showMenuLogo(6);
-        A.setTextCentered(13, 'first time here - pick a name for the leaderboards', 'dim');
-        A.showFrame();
-        A.playerName = await A.readPlayerName('');
-        A.saveConfig();
+        if (A.isTouch()) {
+            // no hardware keyboard on phones/tablets: use a native prompt
+            var v = window.prompt('pick a name for the leaderboards', '');
+            v = (v === null ? '' : String(v)).replace(/[^A-Za-z0-9 _\-]/g, '').trim().substring(0, 16);
+            A.playerName = v || 'guest';
+            A.saveConfig();
+        } else {
+            A.clearFrame();
+            A.showMenuLogo(6);
+            A.setTextCentered(13, 'first time here - pick a name for the leaderboards', 'dim');
+            A.showFrame();
+            A.playerName = await A.readPlayerName('');
+            A.saveConfig();
+        }
     }
 };
 
@@ -2248,6 +2256,11 @@ A.runHeadless = async function () {
     else { process.stdout.write('failed: ' + failed.join(', ') + '\n'); process.exit(1); }
 };
 
+A.isTouch = function () {
+    if (A.isNode) { return false; }
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+};
+
 A.boot = async function () {
     A.loadConfig();
     A.loadScoresFile();
@@ -2267,4 +2280,11 @@ A.boot = async function () {
         A.showFrame();
     }
 };
+
+// browser entry point (the node selftest drives the games itself)
+if (!A.isNode) {
+    A.boot().catch(function (e) {
+        console.error('PS-ARCADE failed to start:', e);
+    });
+}
 
