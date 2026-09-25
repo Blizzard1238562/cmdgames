@@ -13,6 +13,16 @@ From any Windows 10/11 PC with PowerShell:
 irm https://raw.githubusercontent.com/Blizzard1238562/cmdgames/refs/heads/main/arcade.ps1 | iex
 ```
 
+**On an iPad, phone, or any browser?** Play the web version — same 11 games,
+same global leaderboard, same challenge codes, with touch controls:
+
+> https://blizzard1238562.github.io/cmdgames/
+
+The two versions are kept in sync: game logic and tuning are faithful ports,
+challenge codes generated in the terminal decode in the browser and vice
+versa (verified automatically by both self-tests), and both post to the same
+Supabase board.
+
 Or if you have the file locally:
 
 ```powershell
@@ -95,6 +105,8 @@ src/           game + engine sources, concatenated in filename order
 build.ps1      builds the single-file arcade.ps1 (plain UTF-8, no BOM -
                a BOM would break `irm url | iex`)
 arcade.ps1     generated artifact - do not edit by hand
+web/           browser version (canvas terminal + touch controls)
+web/build.ps1  builds web/app.js from web/src/*.js in filename order
 VERSION.txt    current version, fetched by the in-game update check
 supabase/      leaderboard schema + hardening + pong migrations
 ```
@@ -103,9 +115,13 @@ supabase/      leaderboard schema + hardening + pong migrations
 ./build.ps1        # rebuild
 ./arcade.ps1 -SelfTest   # headless smoke test of every game
 ./arcade.ps1 -ListGames  # list the game registry
+
+./web/build.ps1    # rebuild the web version
+node web/selftest.js     # headless web smoke test + challenge-code checks
 ```
 
 Headless test one game only: `$env:ARCADE_TEST_GAME = "snake"; ./arcade.ps1 -SelfTest`
+(web equivalent: `ARCADE_TEST_GAME=snake node web/selftest.js`)
 
 When releasing: bump the version in `src/00-header.ps1` *and* `VERSION.txt`,
 rebuild, push.

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PS-ARCADE web</title>
+<style>
+    html, body {
+        margin: 0; padding: 0; height: 100%;
+        background: #1c1c1e; color: #c8c8c8;
+        font-family: Menlo, Consolas, "Courier New", monospace;
+        overflow: hidden;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+    }
+    #wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    #screen {
+        background: #26262a;
+        max-width: 98vw;
+        border-radius: 6px;
+        box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+    #pad {
+        display: none;
+        grid-template-columns: repeat(4, 64px);
+        grid-template-rows: repeat(2, 56px);
+        gap: 8px;
+        margin-top: 10px;
+    }
+    #pad button {
+        font-family: inherit; font-size: 20px;
+        color: #ddd; background: #313136; border: 1px solid #4a4a52;
+        border-radius: 10px; width: 100%; height: 100%;
+        touch-action: none;
+    }
+    #pad button:active { background: #4a4a52; }
+    #t-a { background: #3d4a3d !important; border-radius: 50% !important; }
+    @media (pointer: coarse) { #pad { display: grid; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+    <canvas id="screen" width="720" height="480"></canvas>
+    <div id="pad">
+        <button id="t-up">&#9650;</button>
+        <button id="t-left">&#9664;</button>
+        <button id="t-down">&#9660;</button>
+        <button id="t-right">&#9654;</button>
+        <button id="t-a">A</button>
+        <button id="t-q">Q</button>
+        <button id="t-m">M</button>
+        <button id="t-h">H</button>
+    </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

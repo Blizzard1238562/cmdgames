@@ -2320,7 +2320,7 @@ function Show-ChallengeScreen {
         Set-Text -X ($xx + 9) -Y $yy -Text $script:Games[$i].name -Fg 'fg'
     }
     Set-Text -X 17 -Y 19 -Text ('> '.PadRight(14)) -Fg 'yellow'
-    Set-TextCentered -Y 21 -Text 'type a code like AA-004821-1, enter = check' -Fg 'dim'
+    Set-TextCentered -Y 21 -Text 'type a code like AF-004821-1, enter = check' -Fg 'dim'
     Show-Frame
     $code = ''
     while ($true) {
