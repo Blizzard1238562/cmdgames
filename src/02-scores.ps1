@@ -205,6 +205,7 @@ function Complete-Game {
     $code = ''
     try { $code = (ConvertTo-ChallengeCode -GameId $GameId -Score $Score) } catch { }
     if ($Score -gt 0) {
+        $script:SessionRuns++
         Flush-PendingOnlineScores
         $locals = @(Get-LocalScores -GameId $GameId)
         $prevBest = 0
@@ -224,7 +225,12 @@ function Complete-Game {
         $codeTxt = ''
         if ($code -ne '') { $codeTxt = ' - {0}' -f $code }
         if ($online) { $sub = 'score uploaded' + $rankTxt + $codeTxt } else { $sub = 'saved locally' + $rankTxt + $codeTxt }
-        if ($rank -eq 1) { Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90 }
+        if ($rank -gt $script:SessionBestRank) { $script:SessionBestRank = $rank }
+        if ($rank -eq 1) {
+            Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90; Play-Sfx -Freq 1100 -Ms 120
+        } elseif ($Score -gt $prevBest -and $prevBest -gt 0) {
+            Play-Sfx -Freq 520 -Ms 50; Play-Sfx -Freq 700 -Ms 70
+        }
     }
 
     return (Show-GameOverScreen -GameName $GameName -Score $Score -Note $note -SubNote $sub)

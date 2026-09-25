@@ -16,13 +16,17 @@ Add-Type -TypeDefinition 'public class ArcadeSelfTestDone : System.Exception { p
 # ---- global state ----
 $script:ESC        = [char]27
 $script:AppName    = 'PS-ARCADE'
-$script:ArcadeVersion   = '1.1.0'
+$script:ArcadeVersion   = '1.2.0'
 $script:UpdateAvailable = $false
 $script:UpdateKnown     = $false
 $script:UpdateRemoteVersion = ''
 $script:Headless   = $false
 $script:SoundOn    = $true
 $script:PlayerName = ''
+$script:PendingOnline   = @{}
+$script:PendingLastTry  = [datetime]::MinValue
+$script:SessionRuns     = 0      # finished runs this session
+$script:SessionBestRank = 0      # best local leaderboard rank this session (0 = none)
 $script:TestKeys   = New-Object System.Collections.Generic.Queue[string]
 $script:TestFrames = 0
 $script:CompatMode = $false   # true = no ANSI support -> classic console colors
@@ -34,8 +38,9 @@ $script:ConfigFile = Join-Path $script:ConfigDir 'config.json'
 $script:ScoresFile = Join-Path $script:ConfigDir 'scores.json'
 
 # ---- Supabase leaderboard (optional) ----
-# The public anon key below is safe to distribute: the scores table only
-# allows anonymous INSERT/SELECT (RLS), never update/delete.
+# The public anon key below is safe to distribute: the scores table is
+# read-only for anon (RLS + revoked grants); writes only happen through
+# the validated, rate-limited submit_score RPC.
 # Env vars ARCADE_SUPABASE_URL / ARCADE_SUPABASE_ANON_KEY or entries in
 # ~/.ps-arcade/config.json override these defaults.
 $script:SupabaseUrl  = 'https://daoothvdwxbfyocyapkl.supabase.co'

@@ -324,11 +324,29 @@ function Clear-KeyBuffer {
 
 function Wait-RealKey {
     # Blocking wait for a single key (menus / prompts). Headless-safe.
+    # Normalizes 'Spacebar' to 'Space' like Get-KeysPressed does.
     if ($script:Headless) { return 'Escape' }
     try {
         $k = [Console]::ReadKey($true)
-        return [string]$k.Key
+        $kn = [string]$k.Key
+        if ($kn -eq 'Spacebar') { $kn = 'Space' }
+        return $kn
     } catch { return 'Escape' }
+}
+
+function Wait-RealKeyChar {
+    # Blocking wait that returns both the (normalized) key name and the
+    # typed character, for text-entry screens. Headless-safe.
+    $o = @{ key = 'Escape'; char = '' }
+    if ($script:Headless) { return $o }
+    try {
+        $k = [Console]::ReadKey($true)
+        $kn = [string]$k.Key
+        if ($kn -eq 'Spacebar') { $kn = 'Space' }
+        $o.key = $kn
+        $o.char = [string]$k.KeyChar
+        return $o
+    } catch { return $o }
 }
 
 function Wait-KeyOrIdle {
@@ -341,7 +359,9 @@ function Wait-KeyOrIdle {
         try {
             if ([Console]::KeyAvailable) {
                 $k = [Console]::ReadKey($true)
-                return [string]$k.Key
+                $kn = [string]$k.Key
+                if ($kn -eq 'Spacebar') { $kn = 'Space' }
+                return $kn
             }
         } catch { return $null }
         Start-Sleep -Milliseconds 30

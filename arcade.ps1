@@ -22,13 +22,17 @@ Add-Type -TypeDefinition 'public class ArcadeSelfTestDone : System.Exception { p
 # ---- global state ----
 $script:ESC        = [char]27
 $script:AppName    = 'PS-ARCADE'
-$script:ArcadeVersion   = '1.1.0'
+$script:ArcadeVersion   = '1.2.0'
 $script:UpdateAvailable = $false
 $script:UpdateKnown     = $false
 $script:UpdateRemoteVersion = ''
 $script:Headless   = $false
 $script:SoundOn    = $true
 $script:PlayerName = ''
+$script:PendingOnline   = @{}
+$script:PendingLastTry  = [datetime]::MinValue
+$script:SessionRuns     = 0      # finished runs this session
+$script:SessionBestRank = 0      # best local leaderboard rank this session (0 = none)
 $script:TestKeys   = New-Object System.Collections.Generic.Queue[string]
 $script:TestFrames = 0
 $script:CompatMode = $false   # true = no ANSI support -> classic console colors
@@ -40,8 +44,9 @@ $script:ConfigFile = Join-Path $script:ConfigDir 'config.json'
 $script:ScoresFile = Join-Path $script:ConfigDir 'scores.json'
 
 # ---- Supabase leaderboard (optional) ----
-# The public anon key below is safe to distribute: the scores table only
-# allows anonymous INSERT/SELECT (RLS), never update/delete.
+# The public anon key below is safe to distribute: the scores table is
+# read-only for anon (RLS + revoked grants); writes only happen through
+# the validated, rate-limited submit_score RPC.
 # Env vars ARCADE_SUPABASE_URL / ARCADE_SUPABASE_ANON_KEY or entries in
 # ~/.ps-arcade/config.json override these defaults.
 $script:SupabaseUrl  = 'https://daoothvdwxbfyocyapkl.supabase.co'
@@ -423,11 +428,29 @@ function Clear-KeyBuffer {
 
 function Wait-RealKey {
     # Blocking wait for a single key (menus / prompts). Headless-safe.
+    # Normalizes 'Spacebar' to 'Space' like Get-KeysPressed does.
     if ($script:Headless) { return 'Escape' }
     try {
         $k = [Console]::ReadKey($true)
-        return [string]$k.Key
+        $kn = [string]$k.Key
+        if ($kn -eq 'Spacebar') { $kn = 'Space' }
+        return $kn
     } catch { return 'Escape' }
+}
+
+function Wait-RealKeyChar {
+    # Blocking wait that returns both the (normalized) key name and the
+    # typed character, for text-entry screens. Headless-safe.
+    $o = @{ key = 'Escape'; char = '' }
+    if ($script:Headless) { return $o }
+    try {
+        $k = [Console]::ReadKey($true)
+        $kn = [string]$k.Key
+        if ($kn -eq 'Spacebar') { $kn = 'Space' }
+        $o.key = $kn
+        $o.char = [string]$k.KeyChar
+        return $o
+    } catch { return $o }
 }
 
 function Wait-KeyOrIdle {
@@ -440,7 +463,9 @@ function Wait-KeyOrIdle {
         try {
             if ([Console]::KeyAvailable) {
                 $k = [Console]::ReadKey($true)
-                return [string]$k.Key
+                $kn = [string]$k.Key
+                if ($kn -eq 'Spacebar') { $kn = 'Space' }
+                return $kn
             }
         } catch { return $null }
         Start-Sleep -Milliseconds 30
@@ -724,6 +749,7 @@ function Complete-Game {
     $code = ''
     try { $code = (ConvertTo-ChallengeCode -GameId $GameId -Score $Score) } catch { }
     if ($Score -gt 0) {
+        $script:SessionRuns++
         Flush-PendingOnlineScores
         $locals = @(Get-LocalScores -GameId $GameId)
         $prevBest = 0
@@ -743,7 +769,12 @@ function Complete-Game {
         $codeTxt = ''
         if ($code -ne '') { $codeTxt = ' - {0}' -f $code }
         if ($online) { $sub = 'score uploaded' + $rankTxt + $codeTxt } else { $sub = 'saved locally' + $rankTxt + $codeTxt }
-        if ($rank -eq 1) { Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90 }
+        if ($rank -gt $script:SessionBestRank) { $script:SessionBestRank = $rank }
+        if ($rank -eq 1) {
+            Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90; Play-Sfx -Freq 1100 -Ms 120
+        } elseif ($Score -gt $prevBest -and $prevBest -gt 0) {
+            Play-Sfx -Freq 520 -Ms 50; Play-Sfx -Freq 700 -Ms 70
+        }
     }
 
     return (Show-GameOverScreen -GameName $GameName -Score $Score -Note $note -SubNote $sub)
@@ -1300,10 +1331,11 @@ function Start-Invaders {
                 }
                 $bombs = $newBo
 
-                # bullet hits aliens
+                # bullet hits aliens (tolerance 1 row: bullets fly 2 rows/frame,
+                # without it they can tunnel straight through a formation row)
                 foreach ($b in $bullets) {
                     foreach ($a in $aliens) {
-                        if ($a.alive -and [Math]::Abs($a.x - $b.x) -le 1 -and [Math]::Abs($a.y - $b.y) -le 0) {
+                        if ($a.alive -and [Math]::Abs($a.x - $b.x) -le 1 -and [Math]::Abs($a.y - $b.y) -le 1) {
                             $a.alive = $false
                             $b.y = -99
                             $score += (3 - $a.kind) * 10
@@ -2277,10 +2309,15 @@ function Show-ChallengeScreen {
     Draw-Box -X 12 -Y 6 -W 56 -H 17 -Title ' challenge ' -Fg 'accent'
     Set-TextCentered -Y 8 -Text 'beat this run:' -Fg 'dim'
     $y = 10
+    $half = [int]([Math]::Ceiling($script:Games.Count / 2))
     for ($i = 0; $i -lt $script:Games.Count; $i++) {
-        Set-Text -X 17 -Y $y -Text ($script:Games[$i].id.PadRight(9)) -Fg 'accent'
-        Set-Text -X 28 -Y $y -Text $script:Games[$i].name -Fg 'fg'
-        $y++
+        $col = 0
+        $row = $i
+        if ($i -ge $half) { $col = 1; $row = $i - $half }
+        $yy = 10 + $row
+        $xx = 17 + $col * 26
+        Set-Text -X $xx -Y $yy -Text ($script:Games[$i].id.PadRight(8)) -Fg 'accent'
+        Set-Text -X ($xx + 9) -Y $yy -Text $script:Games[$i].name -Fg 'fg'
     }
     Set-Text -X 17 -Y 19 -Text ('> '.PadRight(14)) -Fg 'yellow'
     Set-TextCentered -Y 21 -Text 'type a code like AA-004821-1, enter = check' -Fg 'dim'
@@ -2289,7 +2326,8 @@ function Show-ChallengeScreen {
     while ($true) {
         Set-Text -X 17 -Y 19 -Text ('> ' + $code).PadRight(14) -Fg 'yellow'
         Show-Frame
-        $k = Wait-RealKey
+        $in = Wait-RealKeyChar
+        $k = $in.key
         if ($k -eq 'Escape') { return }
         if ($k -eq 'Enter') {
             $c = $code.Trim().ToUpper()
@@ -2308,7 +2346,8 @@ function Show-ChallengeScreen {
         }
         if ($k -eq 'Backspace') { if ($code.Length -gt 0) { $code = $code.Substring(0, $code.Length - 1) } }
         elseif ($code.Length -lt 12) {
-            if ($k.Length -eq 1 -and $k -match '[A-Za-z0-9-]') { $code += $k.ToUpper() }
+            $ch = $in.char
+            if ($ch.Length -eq 1 -and $ch -match '[A-Za-z0-9-]') { $code += $ch.ToUpper() }
         }
     }
 }
@@ -2448,15 +2487,20 @@ function Show-Menu {
         $hsText = 'your best: --'
         if ($top.Count -gt 0) { $hsText = 'your best: {0}  ({1})' -f $top[0].score, $top[0].name }
         Set-TextCentered -Y 23 -Text $hsText -Fg 'dim'
-        $footRow = 25
         if ($script:UpdateKnown) {
             $msg = ''
             if ($script:UpdateAvailable) { $msg = 'update available: v{0} - rerun the install command' -f $script:UpdateRemoteVersion }
             else { $msg = 'you have the latest version (v{0})' -f $script:ArcadeVersion }
-            Set-TextCentered -Y 23 -Text $msg -Fg $(if ($script:UpdateAvailable) { 'yellow' } else { 'dim' })
-            $footRow = 25
+            Set-TextCentered -Y 22 -Text $msg -Fg $(if ($script:UpdateAvailable) { 'yellow' } else { 'dim' })
         }
-        Set-TextCentered -Y $footRow -Text 'up/down select - enter play - h highscores - c challenge - ? help - m sound - q quit' -Fg 'dim'
+        $stats = ''
+        if ($script:SessionBestRank -gt 0) { $stats = 'rank #{0} this session' -f $script:SessionBestRank }
+        if ($script:SessionRuns -gt 0) {
+            if ($stats -ne '') { $stats += '  -  ' }
+            $stats += '{0} run{1} this session' -f $script:SessionRuns, $(if ($script:SessionRuns -eq 1) { '' } else { 's' })
+        }
+        if ($stats -ne '') { Set-TextCentered -Y 23 -Text $stats -Fg 'dim' }
+        Set-TextCentered -Y 25 -Text 'up/down select - enter play - h highscores - c challenge - ? help - m sound - q quit' -Fg 'dim'
         Set-TextCentered -Y ($footRow + 1) -Text ('sound: ' + $(if ($script:SoundOn) { 'on' } else { 'off' }) + '   ' + $(if (Test-OnlineScores) { 'global board: connected' } else { 'global board: offline' })) -Fg 'dim'
         Show-Frame
         # attract mode: wait for a key, blink the coin line while idle
@@ -2470,6 +2514,7 @@ function Show-Menu {
             $blink = -not $blink
             $k = Wait-KeyOrIdle -Seconds 1
         }
+        if (-not $blink) { Set-TextCentered -Y 21 -Text ' ' -Fg 'orange' }
         if ($script:Headless) { $k = 'Q' }
         switch ($k) {
             'UpArrow'   { $sel = ($sel - 1 + $script:Games.Count) % $script:Games.Count; Play-Sfx -Freq 350 -Ms 12 }
@@ -2503,9 +2548,21 @@ function Test-ForUpdate {
     if ($script:Headless) { return }
     try {
         $uri = 'https://raw.githubusercontent.com/Blizzard1238562/cmdgames/refs/heads/main/VERSION.txt'
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('User-Agent', 'ps-arcade')
-        $txt = $wc.DownloadString($uri)
+        # fetch in a background runspace with a hard 4s timeout so a dead
+        # network can never stall the arcade's startup
+        $ps = [PowerShell]::Create()
+        [void]$ps.AddScript({ param($u) (New-Object System.Net.WebClient).DownloadString($u) }).AddArgument($uri)
+        $async = $ps.BeginInvoke()
+        $txt = $null
+        if ($async.AsyncWaitHandle.WaitOne(4000)) {
+            try { $out = @($ps.EndInvoke($async)); if ($out.Count -gt 0) { $txt = [string]$out[0] } } catch { $txt = $null }
+        } else {
+            try { [void]$ps.BeginStop($null, $null) } catch { }
+            $ps.Dispose()
+            return
+        }
+        $ps.Dispose()
+        if ([string]::IsNullOrEmpty($txt)) { return }
         $v = ''
         if ($txt -match '(\d+\.\d+\.\d+)') { $v = $Matches[1] }
         $script:UpdateRemoteVersion = $v

@@ -113,10 +113,11 @@ function Start-Invaders {
                 }
                 $bombs = $newBo
 
-                # bullet hits aliens
+                # bullet hits aliens (tolerance 1 row: bullets fly 2 rows/frame,
+                # without it they can tunnel straight through a formation row)
                 foreach ($b in $bullets) {
                     foreach ($a in $aliens) {
-                        if ($a.alive -and [Math]::Abs($a.x - $b.x) -le 1 -and [Math]::Abs($a.y - $b.y) -le 0) {
+                        if ($a.alive -and [Math]::Abs($a.x - $b.x) -le 1 -and [Math]::Abs($a.y - $b.y) -le 1) {
                             $a.alive = $false
                             $b.y = -99
                             $score += (3 - $a.kind) * 10

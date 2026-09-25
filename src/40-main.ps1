@@ -8,9 +8,21 @@ function Test-ForUpdate {
     if ($script:Headless) { return }
     try {
         $uri = 'https://raw.githubusercontent.com/Blizzard1238562/cmdgames/refs/heads/main/VERSION.txt'
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('User-Agent', 'ps-arcade')
-        $txt = $wc.DownloadString($uri)
+        # fetch in a background runspace with a hard 4s timeout so a dead
+        # network can never stall the arcade's startup
+        $ps = [PowerShell]::Create()
+        [void]$ps.AddScript({ param($u) (New-Object System.Net.WebClient).DownloadString($u) }).AddArgument($uri)
+        $async = $ps.BeginInvoke()
+        $txt = $null
+        if ($async.AsyncWaitHandle.WaitOne(4000)) {
+            try { $out = @($ps.EndInvoke($async)); if ($out.Count -gt 0) { $txt = [string]$out[0] } } catch { $txt = $null }
+        } else {
+            try { [void]$ps.BeginStop($null, $null) } catch { }
+            $ps.Dispose()
+            return
+        }
+        $ps.Dispose()
+        if ([string]::IsNullOrEmpty($txt)) { return }
         $v = ''
         if ($txt -match '(\d+\.\d+\.\d+)') { $v = $Matches[1] }
         $script:UpdateRemoteVersion = $v

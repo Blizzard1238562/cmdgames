@@ -57,10 +57,15 @@ function Show-ChallengeScreen {
     Draw-Box -X 12 -Y 6 -W 56 -H 17 -Title ' challenge ' -Fg 'accent'
     Set-TextCentered -Y 8 -Text 'beat this run:' -Fg 'dim'
     $y = 10
+    $half = [int]([Math]::Ceiling($script:Games.Count / 2))
     for ($i = 0; $i -lt $script:Games.Count; $i++) {
-        Set-Text -X 17 -Y $y -Text ($script:Games[$i].id.PadRight(9)) -Fg 'accent'
-        Set-Text -X 28 -Y $y -Text $script:Games[$i].name -Fg 'fg'
-        $y++
+        $col = 0
+        $row = $i
+        if ($i -ge $half) { $col = 1; $row = $i - $half }
+        $yy = 10 + $row
+        $xx = 17 + $col * 26
+        Set-Text -X $xx -Y $yy -Text ($script:Games[$i].id.PadRight(8)) -Fg 'accent'
+        Set-Text -X ($xx + 9) -Y $yy -Text $script:Games[$i].name -Fg 'fg'
     }
     Set-Text -X 17 -Y 19 -Text ('> '.PadRight(14)) -Fg 'yellow'
     Set-TextCentered -Y 21 -Text 'type a code like AA-004821-1, enter = check' -Fg 'dim'
@@ -69,7 +74,8 @@ function Show-ChallengeScreen {
     while ($true) {
         Set-Text -X 17 -Y 19 -Text ('> ' + $code).PadRight(14) -Fg 'yellow'
         Show-Frame
-        $k = Wait-RealKey
+        $in = Wait-RealKeyChar
+        $k = $in.key
         if ($k -eq 'Escape') { return }
         if ($k -eq 'Enter') {
             $c = $code.Trim().ToUpper()
@@ -88,7 +94,8 @@ function Show-ChallengeScreen {
         }
         if ($k -eq 'Backspace') { if ($code.Length -gt 0) { $code = $code.Substring(0, $code.Length - 1) } }
         elseif ($code.Length -lt 12) {
-            if ($k.Length -eq 1 -and $k -match '[A-Za-z0-9-]') { $code += $k.ToUpper() }
+            $ch = $in.char
+            if ($ch.Length -eq 1 -and $ch -match '[A-Za-z0-9-]') { $code += $ch.ToUpper() }
         }
     }
 }
@@ -228,15 +235,20 @@ function Show-Menu {
         $hsText = 'your best: --'
         if ($top.Count -gt 0) { $hsText = 'your best: {0}  ({1})' -f $top[0].score, $top[0].name }
         Set-TextCentered -Y 23 -Text $hsText -Fg 'dim'
-        $footRow = 25
         if ($script:UpdateKnown) {
             $msg = ''
             if ($script:UpdateAvailable) { $msg = 'update available: v{0} - rerun the install command' -f $script:UpdateRemoteVersion }
             else { $msg = 'you have the latest version (v{0})' -f $script:ArcadeVersion }
-            Set-TextCentered -Y 23 -Text $msg -Fg $(if ($script:UpdateAvailable) { 'yellow' } else { 'dim' })
-            $footRow = 25
+            Set-TextCentered -Y 22 -Text $msg -Fg $(if ($script:UpdateAvailable) { 'yellow' } else { 'dim' })
         }
-        Set-TextCentered -Y $footRow -Text 'up/down select - enter play - h highscores - c challenge - ? help - m sound - q quit' -Fg 'dim'
+        $stats = ''
+        if ($script:SessionBestRank -gt 0) { $stats = 'rank #{0} this session' -f $script:SessionBestRank }
+        if ($script:SessionRuns -gt 0) {
+            if ($stats -ne '') { $stats += '  -  ' }
+            $stats += '{0} run{1} this session' -f $script:SessionRuns, $(if ($script:SessionRuns -eq 1) { '' } else { 's' })
+        }
+        if ($stats -ne '') { Set-TextCentered -Y 23 -Text $stats -Fg 'dim' }
+        Set-TextCentered -Y 25 -Text 'up/down select - enter play - h highscores - c challenge - ? help - m sound - q quit' -Fg 'dim'
         Set-TextCentered -Y ($footRow + 1) -Text ('sound: ' + $(if ($script:SoundOn) { 'on' } else { 'off' }) + '   ' + $(if (Test-OnlineScores) { 'global board: connected' } else { 'global board: offline' })) -Fg 'dim'
         Show-Frame
         # attract mode: wait for a key, blink the coin line while idle
@@ -250,6 +262,7 @@ function Show-Menu {
             $blink = -not $blink
             $k = Wait-KeyOrIdle -Seconds 1
         }
+        if (-not $blink) { Set-TextCentered -Y 21 -Text ' ' -Fg 'orange' }
         if ($script:Headless) { $k = 'Q' }
         switch ($k) {
             'UpArrow'   { $sel = ($sel - 1 + $script:Games.Count) % $script:Games.Count; Play-Sfx -Freq 350 -Ms 12 }
