@@ -1,5 +1,5 @@
 # ============================================================
-#  PS-ARCADE - a simple terminal arcade with 10 games
+#  PS-ARCADE - a simple terminal arcade with 11 games
 #  Built as a single file. Run:  ./arcade.ps1   or   irm <url> | iex
 #  Optional: ./arcade.ps1 -SelfTest   (headless smoke test of all games)
 # ============================================================
@@ -16,6 +16,10 @@ Add-Type -TypeDefinition 'public class ArcadeSelfTestDone : System.Exception { p
 # ---- global state ----
 $script:ESC        = [char]27
 $script:AppName    = 'PS-ARCADE'
+$script:ArcadeVersion   = '1.1.0'
+$script:UpdateAvailable = $false
+$script:UpdateKnown     = $false
+$script:UpdateRemoteVersion = ''
 $script:Headless   = $false
 $script:SoundOn    = $true
 $script:PlayerName = ''

@@ -202,6 +202,8 @@ function Complete-Game {
 
     $note = $Note
     $sub = ''
+    $code = ''
+    try { $code = (ConvertTo-ChallengeCode -GameId $GameId -Score $Score) } catch { }
     if ($Score -gt 0) {
         Flush-PendingOnlineScores
         $locals = @(Get-LocalScores -GameId $GameId)
@@ -216,9 +218,12 @@ function Complete-Game {
             if (-not $online) { Add-PendingOnlineScore -GameId $GameId -Score $Score }
         }
         if ($Score -gt $prevBest) { $note = 'new personal best!' }
+        elseif ($note -eq '' -and $code -ne '') { $note = 'run code: {0}' -f $code }
         $rankTxt = ''
-        if ($rank -gt 0) { $rankTxt = ' - local rank #{0}' -f $rank }
-        if ($online) { $sub = 'score uploaded' + $rankTxt } else { $sub = 'saved locally' + $rankTxt }
+        if ($rank -gt 0) { $rankTxt = ' - rank #{0}' -f $rank }
+        $codeTxt = ''
+        if ($code -ne '') { $codeTxt = ' - {0}' -f $code }
+        if ($online) { $sub = 'score uploaded' + $rankTxt + $codeTxt } else { $sub = 'saved locally' + $rankTxt + $codeTxt }
         if ($rank -eq 1) { Play-Sfx -Freq 660 -Ms 60; Play-Sfx -Freq 880 -Ms 90 }
     }
 

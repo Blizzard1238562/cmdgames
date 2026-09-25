@@ -2,9 +2,37 @@
 #  MAIN - splash, first-run, entry point
 # ============================================================
 
+function Test-ForUpdate {
+    # Compares the built-in version against VERSION.txt on GitHub so the
+    # one-liner crowd can be told when a refresh is worth it. Fails silently.
+    if ($script:Headless) { return }
+    try {
+        $uri = 'https://raw.githubusercontent.com/Blizzard1238562/cmdgames/refs/heads/main/VERSION.txt'
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('User-Agent', 'ps-arcade')
+        $txt = $wc.DownloadString($uri)
+        $v = ''
+        if ($txt -match '(\d+\.\d+\.\d+)') { $v = $Matches[1] }
+        $script:UpdateRemoteVersion = $v
+        $script:UpdateKnown = ($v.Length -gt 0)
+        if ($v -ne '' -and $v -ne $script:ArcadeVersion) {
+            $a = $script:ArcadeVersion -split '\.'
+            $b = $v -split '\.'
+            for ($i = 0; $i -lt 3; $i++) {
+                $ai = 0; $bi = 0
+                if ($i -lt $a.Count) { $ai = [int]$a[$i] }
+                if ($i -lt $b.Count) { $bi = [int]$b[$i] }
+                if ($bi -gt $ai) { $script:UpdateAvailable = $true; break }
+                if ($ai -gt $bi) { break }
+            }
+        }
+    } catch { }
+}
+
 function Start-Arcade {
     Initialize-Console
     Initialize-ArcadeConfig
+    Test-ForUpdate
     try {
         Clear-Console
         Start-Screen -H 30
@@ -26,6 +54,24 @@ function Start-Arcade {
     } finally {
         Restore-Console
     }
+}
+
+function Read-ChallengeTarget {
+    # Decodes a challenge code ('AA-004821-1') back into game + score.
+    # The second letter and the checksum digit must both verify.
+    param([string]$Code)
+    $c = ($Code -replace '[^A-Za-z0-9-]', '').ToUpper()
+    if ($c -notmatch '^([A-Z])([A-Z])-(\d{6})-(\d)$') { return $null }
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    $i1 = $alphabet.IndexOf($Matches[1])
+    $i2 = $alphabet.IndexOf($Matches[2])
+    if ($i1 -lt 0 -or $i2 -lt 0) { return $null }
+    if ($i2 -ne (($i1 * 7 + 5) % 24)) { return $null }
+    $gi = $i1
+    $score = [int]$Matches[3]
+    $chk = [int]$Matches[4]
+    if ((($score + $gi * 7919) % 10) -ne $chk) { return $null }
+    return @{ gameIdx = $gi; score = $score }
 }
 
 # ---- entry ----

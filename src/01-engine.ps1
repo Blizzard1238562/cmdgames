@@ -331,6 +331,24 @@ function Wait-RealKey {
     } catch { return 'Escape' }
 }
 
+function Wait-KeyOrIdle {
+    # Waits up to N seconds for a key; returns the key name or $null on
+    # timeout. Lets screens run cheap idle animations (blink, attract).
+    param([int]$Seconds = 3)
+    if ($script:Headless) { return 'Escape' }   # headless: pretend a key was pressed so idle loops exit
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        try {
+            if ([Console]::KeyAvailable) {
+                $k = [Console]::ReadKey($true)
+                return [string]$k.Key
+            }
+        } catch { return $null }
+        Start-Sleep -Milliseconds 30
+    }
+    return $null
+}
+
 function Wait-KeyAny {
     # Wait until any key is pressed (polls, so it also works after frames).
     while ($true) {
@@ -359,7 +377,7 @@ function Wait-Frame {
     param([int]$Ms = 50)
     if ($script:Headless) {
         $script:TestFrames++
-        if ($script:TestFrames -gt 250) { throw (New-Object ArcadeSelfTestDone) }
+        if ($script:TestFrames -gt 120) { throw (New-Object ArcadeSelfTestDone) }
         return
     }
     $target = $script:FrameStart.AddMilliseconds($Ms)
